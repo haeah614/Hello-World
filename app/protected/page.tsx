@@ -1,7 +1,17 @@
-import LoginButton from "./login-button";
-import { supabase } from "@/lib/supabase";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase-server";
 
-export default async function Home() {
+export default async function ProtectedPage() {
+    const supabase = await createClient();
+
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        redirect("/");
+    }
+
     const { data: movies, error } = await supabase
         .from("movies")
         .select("*")
@@ -13,9 +23,9 @@ export default async function Home() {
 
     return (
         <main>
-            <h1>My Favorite Movies</h1>
+            <h1>My Protected Movies</h1>
 
-            <LoginButton />
+            <p>Welcome! You are signed in with Google.</p>
 
             <ul>
                 {movies?.map((movie) => (
