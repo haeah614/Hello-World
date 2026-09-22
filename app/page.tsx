@@ -17,13 +17,31 @@ export default async function Home() {
 
             <LoginButton />
 
-            <ul>
+            <table style={{ borderCollapse: "collapse", marginTop: "20px" }}>
+                <thead>
+                <tr>
+                    <th style={{ padding: "10px 20px", borderBottom: "2px solid #ccc", textAlign: "left" }}>
+                        Movie
+                    </th>
+                    <th style={{ padding: "10px 20px", borderBottom: "2px solid #ccc", textAlign: "left" }}>
+                        Year
+                    </th>
+                </tr>
+                </thead>
+
+                <tbody>
                 {movies?.map((movie) => (
-                    <li key={movie.id}>
-                        {movie.title} ({movie.year})
-                    </li>
+                    <tr key={movie.id}>
+                        <td style={{ padding: "10px 20px", borderBottom: "1px solid #ddd" }}>
+                            {movie.title}
+                        </td>
+                        <td style={{ padding: "10px 20px", borderBottom: "1px solid #ddd" }}>
+                            {movie.year}
+                        </td>
+                    </tr>
                 ))}
-            </ul>
+                </tbody>
+            </table>
         </main>
     );
 }
