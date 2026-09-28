@@ -12,6 +12,16 @@ export default async function ProtectedPage() {
         redirect("/");
     }
 
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("first_name,last_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    if (!profile?.first_name?.trim() || !profile?.last_name?.trim()) {
+        redirect("/profile");
+    }
+
     const { data: movies, error } = await supabase
         .from("movies")
         .select("*")
@@ -25,7 +35,8 @@ export default async function ProtectedPage() {
         <main>
             <h1>My Protected Movies</h1>
 
-            <p>Welcome! You are signed in with Google.</p>
+            <p>Welcome, {profile.first_name} {profile.last_name}! You are signed in with Google.</p>
+            <p><a href="/profile">Edit your profile</a></p>
 
             <table style={{ borderCollapse: "collapse", marginTop: "20px" }}>
                 <thead>

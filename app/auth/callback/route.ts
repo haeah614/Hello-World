@@ -5,8 +5,6 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const credential = formData.get("credential");
 
-    console.log("Google credential received:", !!credential);
-
     if (!credential || typeof credential !== "string") {
         return NextResponse.redirect(new URL("/", request.url));
     }
@@ -24,5 +22,19 @@ export async function POST(request: Request) {
         });
     }
 
-    return NextResponse.redirect(new URL("/protected", request.url), 303);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+        return NextResponse.redirect(new URL("/", request.url), 303);
+    }
+
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("first_name,last_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    const destination = profile?.first_name?.trim() && profile?.last_name?.trim()
+        ? "/protected"
+        : "/profile";
+    return NextResponse.redirect(new URL(destination, request.url), 303);
 }
