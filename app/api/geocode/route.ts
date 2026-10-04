@@ -24,6 +24,7 @@ function normalizeAddress(address: string) {
         .replace(/\b(?:suite|ste|apartment|apt|unit)\.?\s*#?\s*[\w-]+/gi, "")
         .replace(/\b\d+(?:st|nd|rd|th)\s+floor\b/gi, "")
         .replace(/\bfloor\s*#?\s*[\w-]+/gi, "")
+        .replace(/\s+\d+FL(?:\s+[A-Z0-9-]+)?(?=\s*,|$)/gi, "")
         .replace(/\s*,\s*/g, ", ")
         .replace(/\s+/g, " ")
         .replace(/\s+,/g, ",")
