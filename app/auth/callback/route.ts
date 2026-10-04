@@ -27,5 +27,14 @@ export async function POST(request: Request) {
         return NextResponse.redirect(new URL("/", request.url), 303);
     }
 
-    return NextResponse.redirect(new URL("/", request.url), 303);
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("first_name,last_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    const destination = profile?.first_name?.trim() && profile?.last_name?.trim()
+        ? "/"
+        : "/profile";
+    return NextResponse.redirect(new URL(destination, request.url), 303);
 }
