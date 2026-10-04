@@ -15,13 +15,13 @@ export default async function Home() {
     const planIds = (plans ?? []).map((plan) => plan.id);
     const [{ data: totals }, { data: myVotes }] = planIds.length ? await Promise.all([
         supabase.rpc("get_plan_vote_counts", { plan_ids: planIds }),
-        user ? supabase.from("votes").select("plan_id").in("plan_id", planIds) : Promise.resolve({ data: [] }),
+        user ? supabase.from("votes").select("plan_id,value").in("plan_id", planIds) : Promise.resolve({ data: [] }),
     ]) : [{ data: [] }, { data: [] }];
     const voteTotals = (totals ?? []) as { plan_id: string; upvotes: number }[];
     const cards: PlanCardData[] = (plans ?? []).map((plan) => ({
         ...plan,
         upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.upvotes ?? 0,
-        hasVoted: Boolean(myVotes?.some((vote) => vote.plan_id === plan.id)),
+        myVote: (myVotes?.find((vote) => vote.plan_id === plan.id)?.value === -1 ? -1 : myVotes?.some((vote) => vote.plan_id === plan.id) ? 1 : null) as 1 | -1 | null,
     })).sort((a, b) => b.upvoteCount - a.upvoteCount || b.created_at.localeCompare(a.created_at)).slice(0, 12);
 
     return (

@@ -24,7 +24,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                 const savedPlanIds = savedPlans.map((plan) => plan.id);
                 const [{ data: totals }, { data: votes }] = await Promise.all([
                     supabase.rpc("get_plan_vote_counts", { plan_ids: savedPlanIds }),
-                    supabase.from("votes").select("plan_id").in("plan_id", savedPlanIds),
+                    supabase.from("votes").select("plan_id,value").in("plan_id", savedPlanIds),
                 ]);
                 const voteTotals = (totals ?? []) as { plan_id: string; upvotes: number }[];
                 const savedConstraints = generation.constraints && typeof generation.constraints === "object" ? generation.constraints as Record<string, unknown> : {};
@@ -42,7 +42,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                     plans: savedPlans.map((plan) => ({
                         ...plan,
                         upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.upvotes ?? 0,
-                        hasVoted: Boolean(votes?.some((vote) => vote.plan_id === plan.id)),
+                        myVote: (votes?.find((vote) => vote.plan_id === plan.id)?.value === -1 ? -1 : votes?.some((vote) => vote.plan_id === plan.id) ? 1 : null) as 1 | -1 | null,
                     })),
                 };
             }

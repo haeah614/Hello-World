@@ -26,6 +26,7 @@ export type PlanCardData = {
     longitude?: number | null;
     location?: PlaceLocation | null;
     upvoteCount: number;
+    myVote?: 1 | -1 | null;
     hasVoted?: boolean;
     created_at?: string;
 };
@@ -46,10 +47,10 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
     const [mapState, setMapState] = useState<"loading" | "ready" | "unavailable">(hasTransientLocation || hasPersistedLocation ? "ready" : "loading");
     const mapLocation = plan.location ?? persistedLocation ?? resolvedLocation;
     const [count, setCount] = useState(plan.upvoteCount);
-    const propHasVoted = Boolean(plan.hasVoted);
-    const [voteState, setVoteState] = useState({ propHasVoted, voted: propHasVoted });
-    if (voteState.propHasVoted !== propHasVoted) setVoteState({ propHasVoted, voted: propHasVoted });
-    const voted = voteState.voted;
+    const propVote: 1 | -1 | null = plan.myVote ?? (plan.hasVoted ? 1 : null);
+    const [voteState, setVoteState] = useState({ propVote, vote: propVote });
+    if (voteState.propVote !== propVote) setVoteState({ propVote, vote: propVote });
+    const currentVote = voteState.vote;
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState("");
 
@@ -127,7 +128,7 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
         };
     }, [plan.id, plan.place_url, plan.address, plan.location?.latitude, plan.location?.longitude, plan.latitude, plan.longitude, hasTransientLocation, hasPersistedLocation]);
 
-    async function vote() {
+    async function vote(value: 1 | -1) {
         if (!authenticated) {
             setMessage("Sign in to add your vote.");
             return;
@@ -138,14 +139,15 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
             const response = await fetch("/api/vote", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ planId: plan.id, value: 1 }),
+                body: JSON.stringify({ planId: plan.id, value }),
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error ?? "Could not save your vote.");
-            if (typeof result.hasVoted !== "boolean") throw new Error("Could not update your vote. Please try again.");
-            setCount(typeof result.upvotes === "number" ? result.upvotes : Math.max(0, count + (result.hasVoted ? 1 : -1)));
-            setVoteState({ propHasVoted, voted: result.hasVoted });
-            setMessage(result.hasVoted ? "Your vote is on the board." : "Your vote was removed.");
+            if (result.vote !== null && result.vote !== 1 && result.vote !== -1) throw new Error("Could not update your vote. Please try again.");
+            const upvoteDelta = (result.vote === 1 ? 1 : 0) - (currentVote === 1 ? 1 : 0);
+            setCount(typeof result.upvotes === "number" ? result.upvotes : Math.max(0, count + upvoteDelta));
+            setVoteState({ propVote, vote: result.vote });
+            setMessage(result.vote === null ? "Your vote was removed." : result.vote === 1 ? "Your vote is on the board." : "Thanks for the feedback.");
         } catch (error) {
             setMessage(error instanceof Error ? error.message : "Could not save your vote.");
         } finally {
@@ -190,7 +192,10 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
             <div className="ai-note"><span>THE SAGE NOTE</span><p>{plan.why_it_fits}</p></div>
             <div className="plan-card-footer">
                 {plan.place_url ? <a className="place-link" href={plan.place_url} target="_blank" rel="noreferrer">View place ↗</a> : <span className="place-link-muted">Place details</span>}
-                <button className={`vote-button${voted ? " is-voted" : ""}`} type="button" onClick={vote} disabled={busy} aria-pressed={voted}>{voted ? "✓ I’d go" : "I’d go"} <span>↑ {count}</span></button>
+                <div className="vote-actions">
+                    <button className={`vote-button${currentVote === 1 ? " is-voted" : ""}`} type="button" onClick={() => vote(1)} disabled={busy} aria-pressed={currentVote === 1}>I’d go <span>↑ {count}</span></button>
+                    <button className={`vote-button${currentVote === -1 ? " is-voted" : ""}`} type="button" onClick={() => vote(-1)} disabled={busy} aria-pressed={currentVote === -1}>Not for me <span>↓</span></button>
+                </div>
             </div>
             {message && <p className="vote-message" role="status">{message}</p>}
         </article>
