@@ -190,6 +190,9 @@ export async function POST(request: Request) {
     try {
         const searchText = [prompt, constraints.neighborhood, "New York City"].filter(Boolean).join(" ");
         const primarySearch = await searchPlaces(searchText, placesKey, 12);
+        if (primarySearch.status === 429) {
+            return bad("NYC place search has reached its daily limit. Try again later, or use the community board for existing plans.", 503);
+        }
         if (primarySearch.status !== null) {
             return bad("The NYC place search is temporarily unavailable. Please try again shortly.", 502);
         }
@@ -199,6 +202,7 @@ export async function POST(request: Request) {
             for (const query of fallbackPlaceQueries(prompt, constraints)) {
                 const fallbackSearch = await searchPlaces(query, placesKey, 5);
                 if (fallbackSearch.status !== null) {
+                    if (fallbackSearch.status === 429) return bad("NYC place search has reached its daily limit. Try again later, or use the community board for existing plans.", 503);
                     return bad("The NYC place search is temporarily unavailable. Please try again shortly.", 502);
                 }
                 for (const place of fallbackSearch.places) {
@@ -222,6 +226,8 @@ export async function POST(request: Request) {
         const aiResult = await requestGeminiWithFallback(primaryModel, geminiKey, requestBody);
         const aiResponse = aiResult.response;
         if (!aiResponse.ok) {
+            if (aiResponse.status === 429) return bad("SAGE planning has reached its temporary usage limit. Please try again later.", 503);
+            if ([408, 500, 503, 504].includes(aiResponse.status)) return bad("SAGE planning is temporarily busy. Please try again shortly.", 502);
             return bad("SAGE couldn’t finish shaping your ideas. Please try again shortly.", 502);
         }
         const aiData = await aiResponse.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
@@ -242,13 +248,26 @@ export async function POST(request: Request) {
         if (!suggestions.length) return bad("SAGE couldn’t match its suggestions to the real place results. Please try again.", 502);
 
         const { data: generation, error: generationError } = await supabase.from("generations").insert({ user_id: user.id, prompt, constraints, provider: "google-gemini", model: aiResult.model }).select("id").single();
-        if (generationError || !generation) return bad("We couldn’t save your plan. Please try again.", 500);
+        if (generationError || !generation) {
+            if (generationError) console.error("SAGE generation save failed", JSON.stringify({ code: generationError.code, message: generationError.message.slice(0, 160) }));
+            return bad("We couldn’t save your plan. Please try again.", 500);
+        }
         const rows = suggestions.map((suggestion) => {
             const place = byId.get(suggestion.placeId)!;
             return { generation_id: generation.id, user_id: user.id, title: suggestion.title, description: suggestion.description, why_it_fits: suggestion.whyItFits, place_id: place.id, place_name: place.name, address: place.address, rating: place.rating, review_count: place.reviewCount, price_level: place.priceLevel, place_url: place.mapsUrl, place_types: place.types };
         });
-        const { data: savedPlans, error: planError } = await supabase.from("plans").insert(rows).select("id,title,description,why_it_fits,place_id,place_name,address,rating,review_count,price_level,place_url");
+        const coordinateRows = rows.map((row) => {
+            const location = byId.get(row.place_id)?.location;
+            return { ...row, latitude: location?.latitude ?? null, longitude: location?.longitude ?? null };
+        });
+        const planSelect = "id,title,description,why_it_fits,place_id,place_name,address,rating,review_count,price_level,place_url";
+        let { data: savedPlans, error: planError } = await supabase.from("plans").insert(coordinateRows).select(`${planSelect},latitude,longitude`);
+        if (planError) {
+            console.error("SAGE coordinate plan save unavailable", JSON.stringify({ code: planError.code, message: planError.message.slice(0, 160) }));
+            ({ data: savedPlans, error: planError } = await supabase.from("plans").insert(rows).select(planSelect));
+        }
         if (planError || !savedPlans) {
+            if (planError) console.error("SAGE plan save failed", JSON.stringify({ code: planError.code, message: planError.message.slice(0, 160) }));
             await supabase.from("generations").delete().eq("id", generation.id);
             return bad("We couldn’t save your plan. Please try again.", 500);
         }

@@ -36,7 +36,10 @@ export default async function ProfilePage() {
                     />
                 )}
                 <footer className="profile-footer">
-                    <Link className="profile-back-link" href="/protected">← Back to protected movies</Link>
+                    <Link className="profile-back-link" href="/">← Back to SAGE</Link>
+                    <form action="/auth/signout" method="post">
+                        <button className="profile-back-link" type="submit">Sign Out</button>
+                    </form>
                 </footer>
             </div>
         </main>

@@ -12,6 +12,12 @@ type PlacePhoto = {
 
 type PlaceLocation = { latitude: number; longitude: number };
 
+let googleQuotaUnavailableUntil = 0;
+
+function noteQuotaFailure(response: Response) {
+    if (response.status === 429) googleQuotaUnavailableUntil = Date.now() + 24 * 60 * 60 * 1000;
+}
+
 function noPhoto(status = 404, location?: PlaceLocation | null) {
     const headers = new Headers({ "Cache-Control": "no-store" });
     if (location) {
@@ -75,7 +81,7 @@ export async function GET(request: Request) {
     if (!uuidPattern.test(planId)) return noPhoto(400);
 
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-    if (!apiKey) return noPhoto(503);
+    if (!apiKey || googleQuotaUnavailableUntil > Date.now()) return noPhoto(503);
 
     const supabase = await createClient();
     const { data: plan, error: planError } = await supabase
@@ -85,30 +91,49 @@ export async function GET(request: Request) {
         .maybeSingle();
     if (planError) return photoFailure();
     if (!plan) return photoFailure();
-    if (typeof plan.place_id !== "string" || !plan.place_id) return photoFailure();
+    const placeId = plan.place_id;
+    if (typeof placeId !== "string" || !placeId) return photoFailure();
 
     let placeLocation: PlaceLocation | null = null;
     try {
-        const placeResponse = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(plan.place_id)}`, {
+        const placeResponse = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
             headers: {
                 "X-Goog-Api-Key": apiKey,
-                "X-Goog-FieldMask": "location,photos.name,photos.authorAttributions,photos.googleMapsUri",
+                "X-Goog-FieldMask": "location",
             },
             cache: "no-store",
             signal: AbortSignal.timeout(12000),
         });
-        if (!placeResponse.ok) return photoFailure();
+        if (!placeResponse.ok) {
+            noteQuotaFailure(placeResponse);
+            return photoFailure();
+        }
 
-        const place = await placeResponse.json() as { photos?: PlacePhoto[]; location?: { latitude?: unknown; longitude?: unknown } };
+        const place = await placeResponse.json() as { location?: { latitude?: unknown; longitude?: unknown } };
         const latitude = place.location?.latitude;
         const longitude = place.location?.longitude;
         if (typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180) {
             placeLocation = { latitude, longitude };
         }
-        const photo = place.photos?.find((candidate) => typeof candidate.name === "string");
+
+        const photoResponse = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+            headers: {
+                "X-Goog-Api-Key": apiKey,
+                "X-Goog-FieldMask": "photos.name,photos.authorAttributions,photos.googleMapsUri",
+            },
+            cache: "no-store",
+            signal: AbortSignal.timeout(12000),
+        });
+        if (!photoResponse.ok) {
+            noteQuotaFailure(photoResponse);
+            return photoFailure(placeLocation);
+        }
+
+        const photoData = await photoResponse.json() as { photos?: PlacePhoto[] };
+        const photo = photoData.photos?.find((candidate) => typeof candidate.name === "string");
         if (!photo || typeof photo.name !== "string") return photoFailure(placeLocation);
 
-        const prefix = `places/${plan.place_id}/photos/`;
+        const prefix = `places/${placeId}/photos/`;
         if (!photo.name.startsWith(prefix) || !photo.name.slice(prefix.length) || photo.name.slice(prefix.length).includes("/")) return photoFailure(placeLocation);
 
         const photoPath = photo.name.split("/").map(encodeURIComponent).join("/");
@@ -117,7 +142,10 @@ export async function GET(request: Request) {
             cache: "no-store",
             signal: AbortSignal.timeout(15000),
         });
-        if (!mediaResponse.ok) return photoFailure(placeLocation);
+        if (!mediaResponse.ok) {
+            noteQuotaFailure(mediaResponse);
+            return photoFailure(placeLocation);
+        }
 
         const media = await mediaResponse.json() as { photoUri?: unknown };
         if (typeof media.photoUri !== "string") return photoFailure(placeLocation);

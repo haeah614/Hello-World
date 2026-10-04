@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 
 export default async function ProtectedPage() {
@@ -32,11 +33,19 @@ export default async function ProtectedPage() {
     }
 
     return (
-        <main>
+        <main className="protected-page">
+            <nav className="protected-page-nav" aria-label="Account navigation">
+                <Link className="profile-back-link" href="/">← Back to SAGE</Link>
+                <div>
+                    <Link className="profile-back-link" href="/profile">Edit Profile</Link>
+                    <form action="/auth/signout" method="post">
+                        <button className="profile-back-link" type="submit">Sign Out</button>
+                    </form>
+                </div>
+            </nav>
             <h1>My Protected Movies</h1>
 
             <p>Welcome, {profile.first_name} {profile.last_name}! You are signed in with Google.</p>
-            <p><a href="/profile">Edit your profile</a></p>
 
             <table style={{ borderCollapse: "collapse", marginTop: "20px" }}>
                 <thead>

@@ -22,6 +22,8 @@ export type PlanCardData = {
     review_count: number | null;
     price_level: number | null;
     place_url: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
     location?: PlaceLocation | null;
     upvoteCount: number;
     hasVoted?: boolean;
@@ -36,8 +38,13 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
     const cardRef = useRef<HTMLElement>(null);
     const [photo, setPhoto] = useState<{ src: string; attributions: PhotoAttribution[]; mapsUrl?: string } | null>(null);
     const [resolvedLocation, setResolvedLocation] = useState<PlaceLocation | null>(null);
-    const [mapState, setMapState] = useState<"loading" | "ready" | "unavailable">(plan.location ? "ready" : "loading");
-    const mapLocation = plan.location ?? resolvedLocation;
+    const persistedLocation = typeof plan.latitude === "number" && Number.isFinite(plan.latitude) && typeof plan.longitude === "number" && Number.isFinite(plan.longitude)
+        ? { latitude: plan.latitude, longitude: plan.longitude }
+        : null;
+    const hasTransientLocation = Boolean(plan.location);
+    const hasPersistedLocation = Boolean(persistedLocation);
+    const [mapState, setMapState] = useState<"loading" | "ready" | "unavailable">(hasTransientLocation || hasPersistedLocation ? "ready" : "loading");
+    const mapLocation = plan.location ?? persistedLocation ?? resolvedLocation;
     const [count, setCount] = useState(plan.upvoteCount);
     const propHasVoted = Boolean(plan.hasVoted);
     const [voteState, setVoteState] = useState({ propHasVoted, voted: propHasVoted });
@@ -57,37 +64,21 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
             if (requested) return;
             requested = true;
             try {
-                const response = await fetch(`/api/place-photo?planId=${encodeURIComponent(plan.id)}`, { signal: controller.signal, cache: "no-store" });
-                if (!plan.location) {
-                    let location: PlaceLocation | null = null;
-                    const latitudeHeader = response.headers.get("X-Place-Latitude");
-                    const longitudeHeader = response.headers.get("X-Place-Longitude");
-                    if (latitudeHeader !== null && longitudeHeader !== null) {
-                        const latitude = Number(latitudeHeader);
-                        const longitude = Number(longitudeHeader);
-                        if (Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180) {
-                            location = { latitude, longitude };
+                let locationResolved = hasTransientLocation || hasPersistedLocation;
+                if (!locationResolved && plan.address) {
+                    const geocodeResponse = await fetch(`/api/geocode?address=${encodeURIComponent(plan.address)}`, { signal: controller.signal, cache: "no-store" });
+                    if (geocodeResponse.ok) {
+                        const result = await geocodeResponse.json() as { location?: PlaceLocation | null };
+                        const location = result.location;
+                        if (location && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
+                            setResolvedLocation(location);
+                            setMapState("ready");
+                            locationResolved = true;
                         }
-                    }
-                    if (!location && response.headers.get("content-type")?.includes("application/json")) {
-                        try {
-                            const result = await response.json() as { location?: Partial<PlaceLocation> | null };
-                            const latitude = result.location?.latitude;
-                            const longitude = result.location?.longitude;
-                            if (typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180) {
-                                location = { latitude, longitude };
-                            }
-                        } catch {
-                            // Location metadata is optional when the photo resolver fails.
-                        }
-                    }
-                    if (location) {
-                        setResolvedLocation(location);
-                        setMapState("ready");
-                    } else {
-                        setMapState("unavailable");
                     }
                 }
+                const response = await fetch(`/api/place-photo?planId=${encodeURIComponent(plan.id)}`, { signal: controller.signal, cache: "no-store" });
+                if (!locationResolved) setMapState("unavailable");
                 if (!response.ok || !response.headers.get("content-type")?.startsWith("image/")) return;
                 const mapsUrl = response.headers.get("X-Photo-Maps-Uri");
                 if (!mapsUrl) return;
@@ -109,7 +100,7 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
                     mapsUrl,
                 });
             } catch {
-                if (!controller.signal.aborted && !plan.location) setMapState("unavailable");
+                if (!controller.signal.aborted && !hasTransientLocation && !hasPersistedLocation) setMapState("unavailable");
                 // Photo loading is optional; keep the existing card when it is unavailable.
             }
         };
@@ -134,7 +125,7 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
             controller.abort();
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [plan.id, plan.place_url, plan.location]);
+    }, [plan.id, plan.place_url, plan.address, plan.location?.latitude, plan.location?.longitude, plan.latitude, plan.longitude, hasTransientLocation, hasPersistedLocation]);
 
     async function vote() {
         if (!authenticated) {

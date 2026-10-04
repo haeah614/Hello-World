@@ -65,7 +65,7 @@ export default async function Home() {
                     <div className="empty-state"><div className="empty-spark">✳</div><h3>The board is yours to start.</h3><p>No community plans yet. Make the first one, and give someone else a reason to head out.</p><Link className="primary-button" href={user ? "/create" : "/?login=create"}>Create the first plan <span>↗</span></Link></div>
                 )}
             </section>
-            <footer className="site-footer"><Link className="brand" href="/">SAGE<span>NYC</span></Link><p>Real places. Better plans. A city that keeps surprising you.</p><Link href="/protected">Assignment 3 movies</Link></footer>
+            <footer className="site-footer"><Link className="brand" href="/">SAGE<span>NYC</span></Link><p>Real places. Better plans. A city that keeps surprising you.</p><Link href="/protected">My Protected Movies</Link></footer>
         </main>
     );
 }
