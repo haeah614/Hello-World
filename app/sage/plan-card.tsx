@@ -26,6 +26,7 @@ export type PlanCardData = {
     longitude?: number | null;
     location?: PlaceLocation | null;
     upvoteCount: number;
+    downvoteCount?: number;
     myVote?: 1 | -1 | null;
     hasVoted?: boolean;
     created_at?: string;
@@ -47,6 +48,7 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
     const [mapState, setMapState] = useState<"loading" | "ready" | "unavailable">(hasTransientLocation || hasPersistedLocation ? "ready" : "loading");
     const mapLocation = plan.location ?? persistedLocation ?? resolvedLocation;
     const [count, setCount] = useState(plan.upvoteCount);
+    const [downvoteCount, setDownvoteCount] = useState(plan.downvoteCount ?? 0);
     const propVote: 1 | -1 | null = plan.myVote ?? (plan.hasVoted ? 1 : null);
     const [voteState, setVoteState] = useState({ propVote, vote: propVote });
     if (voteState.propVote !== propVote) setVoteState({ propVote, vote: propVote });
@@ -145,7 +147,9 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
             if (!response.ok) throw new Error(result.error ?? "Could not save your vote.");
             if (result.vote !== null && result.vote !== 1 && result.vote !== -1) throw new Error("Could not update your vote. Please try again.");
             const upvoteDelta = (result.vote === 1 ? 1 : 0) - (currentVote === 1 ? 1 : 0);
+            const downvoteDelta = (result.vote === -1 ? 1 : 0) - (currentVote === -1 ? 1 : 0);
             setCount(typeof result.upvotes === "number" ? result.upvotes : Math.max(0, count + upvoteDelta));
+            setDownvoteCount(typeof result.downvotes === "number" ? result.downvotes : Math.max(0, downvoteCount + downvoteDelta));
             setVoteState({ propVote, vote: result.vote });
             setMessage(result.vote === null ? "Your vote was removed." : result.vote === 1 ? "Your vote is on the board." : "Thanks for the feedback.");
         } catch (error) {
@@ -194,7 +198,7 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
                 {plan.place_url ? <a className="place-link" href={plan.place_url} target="_blank" rel="noreferrer">View place ↗</a> : <span className="place-link-muted">Place details</span>}
                 <div className="vote-actions">
                     <button className={`vote-button${currentVote === 1 ? " is-voted" : ""}`} type="button" onClick={() => vote(1)} disabled={busy} aria-pressed={currentVote === 1}>I’d go <span>↑ {count}</span></button>
-                    <button className={`vote-button${currentVote === -1 ? " is-voted" : ""}`} type="button" onClick={() => vote(-1)} disabled={busy} aria-pressed={currentVote === -1}>Not for me <span>↓</span></button>
+                    <button className={`vote-button${currentVote === -1 ? " is-voted" : ""}`} type="button" onClick={() => vote(-1)} disabled={busy} aria-pressed={currentVote === -1}>Not for me <span>↓ {downvoteCount}</span></button>
                 </div>
             </div>
             {message && <p className="vote-message" role="status">{message}</p>}

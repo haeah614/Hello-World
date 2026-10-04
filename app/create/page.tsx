@@ -23,10 +23,10 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
             if (savedPlans?.length === planIds.length) {
                 const savedPlanIds = savedPlans.map((plan) => plan.id);
                 const [{ data: totals }, { data: votes }] = await Promise.all([
-                    supabase.rpc("get_plan_vote_counts", { plan_ids: savedPlanIds }),
+                    supabase.rpc("get_plan_vote_totals", { plan_ids: savedPlanIds }),
                     supabase.from("votes").select("plan_id,value").in("plan_id", savedPlanIds),
                 ]);
-                const voteTotals = (totals ?? []) as { plan_id: string; upvotes: number }[];
+                const voteTotals = (totals ?? []) as { plan_id: string; positive_votes: number; negative_votes: number }[];
                 const savedConstraints = generation.constraints && typeof generation.constraints === "object" ? generation.constraints as Record<string, unknown> : {};
                 const constraints: Constraints = {
                     budget: typeof savedConstraints.budget === "string" ? savedConstraints.budget : "",
@@ -41,7 +41,8 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                     constraints,
                     plans: savedPlans.map((plan) => ({
                         ...plan,
-                        upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.upvotes ?? 0,
+                        upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.positive_votes ?? 0,
+                        downvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.negative_votes ?? 0,
                         myVote: (votes?.find((vote) => vote.plan_id === plan.id)?.value === -1 ? -1 : votes?.some((vote) => vote.plan_id === plan.id) ? 1 : null) as 1 | -1 | null,
                     })),
                 };

@@ -47,7 +47,7 @@ export async function POST(request: Request) {
         vote = body.value;
     }
 
-    const { data: totals, error: countError } = await supabase.rpc("get_plan_vote_counts", { plan_ids: [body.planId] });
-    if (countError) return Response.json({ vote, upvotes: null });
-    return Response.json({ vote, upvotes: totals?.[0]?.upvotes ?? 0 });
+    const { data: totals, error: countError } = await supabase.rpc("get_plan_vote_totals", { plan_ids: [body.planId] });
+    if (countError) return Response.json({ vote, upvotes: null, downvotes: null });
+    return Response.json({ vote, upvotes: totals?.[0]?.positive_votes ?? 0, downvotes: totals?.[0]?.negative_votes ?? 0 });
 }
