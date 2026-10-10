@@ -35,7 +35,7 @@ export default function CreateForm({ initialIdea, initialGeneration }: { initial
         finally { setBusy(false); }
     }
 
-    return <div className="create-content"><form className="create-form" onSubmit={submit}>
+    return <><div className="create-content"><form className="create-form" onSubmit={submit}>
         <div className="form-heading"><span>01 / YOUR VIBE</span><h2>What sounds like a good day?</h2></div>
         <label className="form-field"><span>Your starting point <b>*</b></span><textarea required minLength={8} maxLength={1000} rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="A quiet cafe, a long walk, a little culture…" /></label>
         <div className="form-grid">
@@ -51,7 +51,7 @@ export default function CreateForm({ initialIdea, initialGeneration }: { initial
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="primary-button generate-button" type="submit" disabled={busy}>{busy ? <><span className="spinner" /> Finding your places…</> : <>Find my plan <span>✳</span></>}</button>
         <p className="form-footnote">SAGE uses real place listings and clearly labels what’s AI-generated.</p>
-    </form>
-    {plans.length > 0 && <section className="results-section"><div><p className="eyebrow">Your city, your way</p><h2>Here’s a place to start.</h2><p className="results-saved">Saved to the community board · your plan can now collect votes</p></div><div className="plan-grid">{plans.map((plan) => <PlanCard key={plan.id} plan={plan} authenticated />)}</div></section>}
-    </div>;
+    </form></div>
+    {plans.length > 0 && <section className="results-section"><div><p className="eyebrow">Your city, your way</p><h2>Here’s a place to start.</h2><p className="results-saved">Saved to the community board · your plan can now collect votes</p></div><div className="plan-grid generation-results-grid">{plans.map((plan) => <PlanCard key={plan.id} plan={plan} authenticated />)}</div></section>}
+    </>;
 }

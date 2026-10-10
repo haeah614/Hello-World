@@ -10,7 +10,7 @@ type Constraints = { budget: string; duration: string; neighborhood: string; moo
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ idea?: string | string[]; generation?: string | string[]; planIds?: string | string[] }> }) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) redirect("/");
+    if (!user) redirect("/login?next=create");
     const params = await searchParams;
     let restoredGeneration: { prompt: string; constraints: Constraints; plans: PlanCardData[] } | undefined;
 
@@ -22,9 +22,10 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
             const { data: savedPlans } = await supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,created_at").in("id", planIds);
             if (savedPlans?.length === planIds.length) {
                 const savedPlanIds = savedPlans.map((plan) => plan.id);
-                const [{ data: totals }, { data: votes }] = await Promise.all([
+                const [{ data: totals }, { data: votes }, { data: bookmarks, error: bookmarkError }] = await Promise.all([
                     supabase.rpc("get_plan_vote_totals", { plan_ids: savedPlanIds }),
                     supabase.from("votes").select("plan_id,value").in("plan_id", savedPlanIds),
+                    supabase.from("saved_places").select("plan_id").eq("user_id", user.id).in("plan_id", savedPlanIds),
                 ]);
                 const voteTotals = (totals ?? []) as { plan_id: string; positive_votes: number; negative_votes: number }[];
                 const savedConstraints = generation.constraints && typeof generation.constraints === "object" ? generation.constraints as Record<string, unknown> : {};
@@ -41,6 +42,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
                     constraints,
                     plans: savedPlans.map((plan) => ({
                         ...plan,
+                        isSaved: bookmarkError ? null : Boolean(bookmarks?.some((row) => row.plan_id === plan.id)),
                         upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.positive_votes ?? 0,
                         downvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.negative_votes ?? 0,
                         myVote: (votes?.find((vote) => vote.plan_id === plan.id)?.value === -1 ? -1 : votes?.some((vote) => vote.plan_id === plan.id) ? 1 : null) as 1 | -1 | null,
@@ -50,7 +52,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         }
     }
 
-    return <main className="create-shell"><header className="site-nav"><Link className="brand" href="/">SAGE<span>NYC</span></Link><nav><Link href="/">Discover</Link><span>Create</span><Link href="/profile">Profile</Link></nav></header>
+    return <main className="create-shell"><header className="site-nav"><Link className="brand" href="/">SAGE<span>NYC</span></Link><nav><Link href="/">Discover</Link><span>Create</span><Link href="/saved">My Saved Places</Link><Link href="/profile">Profile</Link></nav></header>
         <section className="create-layout"><div className="create-intro"><p className="eyebrow">A good day starts somewhere</p><h1>Give us the<br /><em>starting point.</em></h1><div className="create-aside"><span>✳</span><p>Real places from Google.<br />A little perspective from AI.<br />The final call is yours.</p></div></div>
             <CreateForm initialIdea={typeof params.idea === "string" ? params.idea : ""} initialGeneration={restoredGeneration} />
         </section>

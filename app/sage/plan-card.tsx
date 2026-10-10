@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import SaveButton from "./save-button";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,6 +14,8 @@ const LeafletPlaceMap = dynamic(() => import("./leaflet-place-map"), {
 
 export type PlanCardData = {
     id: string;
+    isSaved?: boolean | null;
+    place_types?: string[];
     title: string;
     description: string;
     why_it_fits: string;
@@ -36,7 +39,7 @@ type PhotoAttribution = { displayName: string; uri?: string };
 
 const priceLabels = ["Free", "$", "$$", "$$$", "$$$$"];
 
-export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; authenticated: boolean }) {
+export default function PlanCard({ plan, authenticated, votesUnavailable = false }: { plan: PlanCardData; authenticated: boolean; votesUnavailable?: boolean }) {
     const cardRef = useRef<HTMLElement>(null);
     const [photo, setPhoto] = useState<{ src: string; attributions: PhotoAttribution[]; mapsUrl?: string } | null>(null);
     const [resolvedLocation, setResolvedLocation] = useState<PlaceLocation | null>(null);
@@ -174,6 +177,7 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
                 </figcaption>
             </figure>}
             <div className="plan-card-topline"><span className="real-label"><i /> REAL PLACE</span><span className="community-label">COMMUNITY PICK</span></div>
+            <SaveButton planId={plan.id} authenticated={authenticated} initialSaved={plan.isSaved} />
             <h3>{plan.title}</h3>
             <p className="plan-description">{plan.description}</p>
             <div className="place-panel">
@@ -197,8 +201,8 @@ export default function PlanCard({ plan, authenticated }: { plan: PlanCardData; 
             <div className="plan-card-footer">
                 {plan.place_url ? <a className="place-link" href={plan.place_url} target="_blank" rel="noreferrer">View place ↗</a> : <span className="place-link-muted">Place details</span>}
                 <div className="vote-actions">
-                    <button className={`vote-button${currentVote === 1 ? " is-voted" : ""}`} type="button" onClick={() => vote(1)} disabled={busy} aria-pressed={currentVote === 1}>I’d go <span>↑ {count}</span></button>
-                    <button className={`vote-button${currentVote === -1 ? " is-voted" : ""}`} type="button" onClick={() => vote(-1)} disabled={busy} aria-pressed={currentVote === -1}>Not for me <span>↓ {downvoteCount}</span></button>
+                    <button className={`vote-button${currentVote === 1 ? " is-voted" : ""}`} type="button" onClick={() => vote(1)} disabled={busy || votesUnavailable} aria-pressed={currentVote === 1}>I’d go <span>↑ {count}</span></button>
+                    <button className={`vote-button${currentVote === -1 ? " is-voted" : ""}`} type="button" onClick={() => vote(-1)} disabled={busy || votesUnavailable} aria-pressed={currentVote === -1}>Not for me <span>↓ {downvoteCount}</span></button>
                 </div>
             </div>
             {message && <p className="vote-message" role="status">{message}</p>}

@@ -37,6 +37,7 @@ export default async function ProfilePage() {
                 )}
                 <footer className="profile-footer">
                     <Link className="profile-back-link" href="/">← Back to SAGE</Link>
+                    <Link className="profile-back-link" href="/saved">My Saved Places</Link>
                     <form action="/auth/signout" method="post">
                         <button className="profile-back-link" type="submit">Sign Out</button>
                     </form>
