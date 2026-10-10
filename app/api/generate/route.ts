@@ -4,9 +4,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type Constraints = { budget?: string; duration?: string; neighborhood?: string; mood?: string; company?: string; extra?: string };
+type AddressComponent = { longText?: unknown; shortText?: unknown; types?: unknown };
 type Place = { id: string; name: string; address: string | null; rating: number | null; reviewCount: number | null; priceLevel: number | null; types: string[]; mapsUrl: string | null; location: { latitude: number; longitude: number } | null; hasPhoto: boolean; rawPhotoEntryCount: number; usablePhotoNameCount: number };
 type Suggestion = { title: string; description: string; whyItFits: string; placeId: string };
-const placesFieldMask = "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.googleMapsUri,places.photos";
+const placesFieldMask = "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.googleMapsUri,places.photos";
 const placeTypePattern = /\b(caf(?:e|es|é)|coffee|bookstore|bookshop|restaurant|food hall|bar|museum|gallery|park|garden|market|bakery|theater|theatre|cinema|movie|concert|live music|bowling|arcade|library|zoo|aquarium|landmark|museum|shopping)\b/i;
 const transientGeminiStatuses = new Set([408, 429, 500, 503, 504]);
 const geminiAttemptTimeoutMs = 8000;
@@ -22,6 +23,28 @@ class GeminiTimeoutError extends Error {
 
 function bad(message: string, status: number) { return Response.json({ error: message }, { status }); }
 function text(value: unknown, max: number) { return typeof value === "string" ? value.trim().slice(0, max) : ""; }
+function databaseFailure(error: unknown) {
+    if (!error || typeof error !== "object") return { code: "unknown", status: "unknown", message: "unknown" };
+    const value = error as { code?: unknown; status?: unknown; message?: unknown };
+    return {
+        code: typeof value.code === "string" ? value.code.slice(0, 40) : "unknown",
+        status: typeof value.status === "number" ? value.status : "unknown",
+        message: typeof value.message === "string" ? value.message.replace(/[\r\n\t]+/g, " ").slice(0, 160) : "unknown",
+    };
+}
+function validCoordinatePair(latitude: unknown, longitude: unknown) {
+    return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+        && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}
+const plusCodePattern = /\b[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,}\b/i;
+
+function placeAddress(place: Record<string, unknown>, placeName: string) {
+    const formattedAddress = typeof place.formattedAddress === "string" ? place.formattedAddress.trim() : "";
+    if (formattedAddress && !plusCodePattern.test(formattedAddress)) return formattedAddress;
+    const components = Array.isArray(place.addressComponents) ? place.addressComponents as AddressComponent[] : [];
+    const locality = components.find((component) => Array.isArray(component.types) && component.types.some((type) => ["locality", "postal_town", "sublocality", "administrative_area_level_2"].includes(type)))?.longText;
+    return typeof locality === "string" && locality.trim() ? `${placeName}, ${locality.trim()}` : placeName;
+}
 async function fetchGemini(model: string, apiKey: string, requestBody: Record<string, unknown>, timeoutMs: number) {
     try {
         return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
@@ -108,7 +131,7 @@ function parsePlaces(data: { places?: Array<Record<string, unknown>> }): Place[]
             return resource.startsWith(photoPrefix) && resource.length > photoPrefix.length && !resource.slice(photoPrefix.length).includes("/");
         });
         const price = typeof place.priceLevel === "string" ? ["PRICE_LEVEL_FREE", "PRICE_LEVEL_INEXPENSIVE", "PRICE_LEVEL_MODERATE", "PRICE_LEVEL_EXPENSIVE", "PRICE_LEVEL_VERY_EXPENSIVE"].indexOf(place.priceLevel) : -1;
-        return [{ id, name: displayName, address: typeof place.formattedAddress === "string" ? place.formattedAddress : null, rating: typeof place.rating === "number" ? place.rating : null, reviewCount: typeof place.userRatingCount === "number" ? place.userRatingCount : null, priceLevel: price >= 0 ? price : null, types: Array.isArray(place.types) ? place.types.filter((v): v is string => typeof v === "string") : [], mapsUrl: typeof place.googleMapsUri === "string" ? place.googleMapsUri : null, location, hasPhoto, rawPhotoEntryCount: rawPhotos.length, usablePhotoNameCount }];
+        return [{ id, name: displayName, address: placeAddress(place, displayName) || null, rating: typeof place.rating === "number" ? place.rating : null, reviewCount: typeof place.userRatingCount === "number" ? place.userRatingCount : null, priceLevel: price >= 0 ? price : null, types: Array.isArray(place.types) ? place.types.filter((v): v is string => typeof v === "string") : [], mapsUrl: typeof place.googleMapsUri === "string" ? place.googleMapsUri : null, location, hasPhoto, rawPhotoEntryCount: rawPhotos.length, usablePhotoNameCount }];
     });
 }
 
@@ -260,16 +283,26 @@ export async function POST(request: Request) {
             const location = byId.get(row.place_id)?.location;
             return { ...row, latitude: location?.latitude ?? null, longitude: location?.longitude ?? null };
         });
-        const planSelect = "id,title,description,why_it_fits,place_id,place_name,address,rating,review_count,price_level,place_url";
-        let { data: savedPlans, error: planError } = await supabase.from("plans").insert(coordinateRows).select(`${planSelect},latitude,longitude`);
-        if (planError) {
-            console.error("SAGE coordinate plan save unavailable", JSON.stringify({ code: planError.code, message: planError.message.slice(0, 160) }));
-            ({ data: savedPlans, error: planError } = await supabase.from("plans").insert(rows).select(planSelect));
-        }
+        const planSelect = "id,title,description,why_it_fits,place_id,place_name,address,rating,review_count,price_level,place_url,latitude,longitude";
+        const { data: savedPlans, error: planError } = await supabase.from("plans").insert(coordinateRows).select(planSelect);
         if (planError || !savedPlans) {
-            if (planError) console.error("SAGE plan save failed", JSON.stringify({ code: planError.code, message: planError.message.slice(0, 160) }));
+            console.error("SAGE coordinate plan save failed", JSON.stringify({
+                error: databaseFailure(planError),
+                planCount: coordinateRows.length,
+                coordinatesProvided: coordinateRows.filter((row) => row.latitude !== null && row.longitude !== null).length,
+            }));
             await supabase.from("generations").delete().eq("id", generation.id);
             return bad("We couldn’t save your plan. Please try again.", 500);
+        }
+        const expectedCoordinates = new Map(coordinateRows.map((row) => [row.place_id, row]));
+        const lostCoordinates = savedPlans.filter((plan) => {
+            const expected = expectedCoordinates.get(plan.place_id);
+            return expected && validCoordinatePair(expected.latitude, expected.longitude) && !validCoordinatePair(plan.latitude, plan.longitude);
+        });
+        if (lostCoordinates.length) {
+            console.error("SAGE coordinate plan save returned missing coordinates", JSON.stringify({ planCount: savedPlans.length, lostCount: lostCoordinates.length }));
+            await supabase.from("generations").delete().eq("id", generation.id);
+            return bad("We couldn’t save complete place details. Please try again.", 500);
         }
         return Response.json({ generationId: generation.id, plans: savedPlans.map((plan) => ({ ...plan, location: byId.get(plan.place_id)?.location ?? null })) });
     } catch {

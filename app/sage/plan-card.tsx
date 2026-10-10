@@ -38,6 +38,18 @@ export type PlanCardData = {
 type PhotoAttribution = { displayName: string; uri?: string };
 
 const priceLabels = ["Free", "$", "$$", "$$$", "$$$$"];
+const plusCodePattern = /\b[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,}\b/i;
+
+function displayAddress(placeName: string, address: string | null) {
+    const value = address?.trim() ?? "";
+    if (!value || !plusCodePattern.test(value)) return value;
+    const locality = value.replace(plusCodePattern, "").split(",")
+        .map((part) => part.replace(/\b\d{5}(?:-\d{4})?\b/g, "").trim())
+        .filter((part) => part && !/^\d{5}(?:-\d{4})?$/.test(part) && !/^(?:US|USA|United States)$/i.test(part))
+        .slice(0, 2)
+        .join(", ");
+    return locality ? `${placeName}, ${locality}` : placeName;
+}
 
 export default function PlanCard({ plan, authenticated, votesUnavailable = false }: { plan: PlanCardData; authenticated: boolean; votesUnavailable?: boolean }) {
     const cardRef = useRef<HTMLElement>(null);
@@ -207,7 +219,7 @@ export default function PlanCard({ plan, authenticated, votesUnavailable = false
             <p className="plan-description">{plan.description}</p>
             <div className="place-panel">
                 <div className="place-monogram">{plan.place_name.slice(0, 1)}</div>
-                <div className="place-copy"><span className="place-tag">THE PLACE</span><strong>{plan.place_name}</strong><span>{plan.address || "Address not provided by place listing"}</span>
+                <div className="place-copy"><span className="place-tag">THE PLACE</span><strong>{plan.place_name}</strong><span>{displayAddress(plan.place_name, plan.address) || "Address not provided by place listing"}</span>
                     <div className="place-facts">
                         {plan.rating !== null && <span>★ {plan.rating.toFixed(1)}{plan.review_count !== null ? ` · ${plan.review_count.toLocaleString()} reviews` : ""}</span>}
                         {plan.price_level !== null && <span>{priceLabels[plan.price_level] ?? "Price not listed"}</span>}
