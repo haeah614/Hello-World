@@ -71,19 +71,44 @@ export default function PlanCard({ plan, authenticated, votesUnavailable = false
             requested = true;
             try {
                 let locationResolved = hasTransientLocation || hasPersistedLocation;
-                if (!locationResolved && plan.address) {
-                    const geocodeResponse = await fetch(`/api/geocode?address=${encodeURIComponent(plan.address)}`, { signal: controller.signal, cache: "no-store" });
-                    if (geocodeResponse.ok) {
-                        const result = await geocodeResponse.json() as { location?: PlaceLocation | null };
-                        const location = result.location;
-                        if (location && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
-                            setResolvedLocation(location);
-                            setMapState("ready");
-                            locationResolved = true;
+                if (!locationResolved) {
+                    try {
+                        const locationResponse = await fetch(`/api/place-location?planId=${encodeURIComponent(plan.id)}`, { signal: controller.signal, cache: "no-store" });
+                        if (locationResponse.ok) {
+                            const result = await locationResponse.json() as { location?: PlaceLocation | null };
+                            const location = result.location;
+                            if (location && Number.isFinite(location.latitude) && location.latitude >= -90 && location.latitude <= 90 && Number.isFinite(location.longitude) && location.longitude >= -180 && location.longitude <= 180) {
+                                setResolvedLocation(location);
+                                setMapState("ready");
+                                locationResolved = true;
+                            }
                         }
-                    }
+                    } catch { /* Address geocoding remains the next fallback. */ }
+                }
+                if (!locationResolved && plan.address) {
+                    try {
+                        const geocodeResponse = await fetch(`/api/geocode?address=${encodeURIComponent(plan.address)}`, { signal: controller.signal, cache: "no-store" });
+                        if (geocodeResponse.ok) {
+                            const result = await geocodeResponse.json() as { location?: PlaceLocation | null };
+                            const location = result.location;
+                            if (location && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
+                                setResolvedLocation(location);
+                                setMapState("ready");
+                                locationResolved = true;
+                            }
+                        }
+                    } catch { /* The Google place lookup remains authoritative. */ }
                 }
                 const response = await fetch(`/api/place-photo?planId=${encodeURIComponent(plan.id)}`, { signal: controller.signal, cache: "no-store" });
+                const rawHeaderLatitude = response.headers.get("X-Place-Latitude");
+                const rawHeaderLongitude = response.headers.get("X-Place-Longitude");
+                const headerLatitude = rawHeaderLatitude === null ? NaN : Number(rawHeaderLatitude);
+                const headerLongitude = rawHeaderLongitude === null ? NaN : Number(rawHeaderLongitude);
+                if (!locationResolved && Number.isFinite(headerLatitude) && headerLatitude >= -90 && headerLatitude <= 90 && Number.isFinite(headerLongitude) && headerLongitude >= -180 && headerLongitude <= 180) {
+                    setResolvedLocation({ latitude: headerLatitude, longitude: headerLongitude });
+                    setMapState("ready");
+                    locationResolved = true;
+                }
                 if (!locationResolved) setMapState("unavailable");
                 if (!response.ok || !response.headers.get("content-type")?.startsWith("image/")) return;
                 const mapsUrl = response.headers.get("X-Photo-Maps-Uri");

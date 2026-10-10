@@ -17,10 +17,16 @@ export default async function SavedPage({ searchParams }: { searchParams: Promis
     let votesFailed = false;
     let hasNext = false;
     if (user) {
-        const { data, error } = await supabase.from("saved_places")
-            .select("plan_id,plans!inner(id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,created_at)")
+        const initialSaved = await supabase.from("saved_places")
+            .select("plan_id,plans!inner(id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,latitude,longitude,created_at)")
             .eq("user_id", user.id).order("created_at", { ascending: false }).order("plan_id")
             .range((page - 1) * pageSize, page * pageSize);
+        const { data, error } = initialSaved.error
+            ? await supabase.from("saved_places")
+                .select("plan_id,plans!inner(id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,created_at)")
+                .eq("user_id", user.id).order("created_at", { ascending: false }).order("plan_id")
+                .range((page - 1) * pageSize, page * pageSize)
+            : initialSaved;
         failed = Boolean(error);
         hasNext = (data?.length ?? 0) > pageSize;
         // Supabase's untyped client infers joins as arrays; normalize both shapes.

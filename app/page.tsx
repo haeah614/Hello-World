@@ -9,10 +9,13 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
     const supabase = await createClient();
-    const [{ data: { user } }, { data: plans, error }] = await Promise.all([
+    const [{ data: { user } }, initialPlans] = await Promise.all([
         supabase.auth.getUser(),
-        supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,place_types,created_at").order("created_at", { ascending: false }).limit(100),
+        supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,place_types,latitude,longitude,created_at").order("created_at", { ascending: false }).limit(100),
     ]);
+    const { data: plans, error } = initialPlans.error
+        ? await supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,place_types,created_at").order("created_at", { ascending: false }).limit(100)
+        : initialPlans;
     const planIds = (plans ?? []).map((plan) => plan.id);
     const [{ data: totals }, { data: myVotes }, { data: saved, error: savedError }] = planIds.length ? await Promise.all([
         supabase.rpc("get_plan_vote_totals", { plan_ids: planIds }),
