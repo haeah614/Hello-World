@@ -12,10 +12,19 @@ type PlacePhoto = {
 
 type PlaceLocation = { latitude: number; longitude: number };
 
-let googleQuotaUnavailableUntil = 0;
+let googleBackoffUntil = 0;
+let googleBackoffMs = 0;
 
 function noteQuotaFailure(response: Response) {
-    if (response.status === 429) googleQuotaUnavailableUntil = Date.now() + 24 * 60 * 60 * 1000;
+    if (response.status !== 429) return;
+    googleBackoffMs = Math.min(10 * 60 * 1000, googleBackoffMs ? googleBackoffMs * 2 : 30 * 1000);
+    googleBackoffUntil = Date.now() + googleBackoffMs;
+    console.warn("SAGE Google Places rate limited", { operation: "place_photo", status: response.status, backoffSeconds: googleBackoffMs / 1000 });
+}
+
+function noteGoogleFailure(operation: string, error: unknown) {
+    const reason = error instanceof Error && error.name === "TimeoutError" ? "timeout" : error instanceof Error && error.name === "SyntaxError" ? "response_parse_error" : error instanceof Error ? "network_error" : "request_failed";
+    console.warn("SAGE Google Places request failed", { operation, reason });
 }
 
 function noPhoto(status = 404, location?: PlaceLocation | null) {
@@ -81,7 +90,11 @@ export async function GET(request: Request) {
     if (!uuidPattern.test(planId)) return noPhoto(400);
 
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-    if (!apiKey || googleQuotaUnavailableUntil > Date.now()) return noPhoto(503);
+    if (!apiKey) {
+        console.warn("SAGE Google Places configuration missing", { operation: "place_photo" });
+        return noPhoto(503);
+    }
+    if (googleBackoffUntil > Date.now()) return noPhoto(503);
 
     const supabase = await createClient();
     const { data: plan, error: planError } = await supabase
@@ -106,6 +119,7 @@ export async function GET(request: Request) {
         });
         if (!placeResponse.ok) {
             noteQuotaFailure(placeResponse);
+            if (placeResponse.status !== 429) console.warn("SAGE Google Places upstream response", { operation: "place_photo_location", status: placeResponse.status });
             return photoFailure();
         }
 
@@ -126,6 +140,7 @@ export async function GET(request: Request) {
         });
         if (!photoResponse.ok) {
             noteQuotaFailure(photoResponse);
+            if (photoResponse.status !== 429) console.warn("SAGE Google Places upstream response", { operation: "place_photo_metadata", status: photoResponse.status });
             return photoFailure(placeLocation);
         }
 
@@ -144,6 +159,7 @@ export async function GET(request: Request) {
         });
         if (!mediaResponse.ok) {
             noteQuotaFailure(mediaResponse);
+            if (mediaResponse.status !== 429) console.warn("SAGE Google Places upstream response", { operation: "place_photo_media", status: mediaResponse.status });
             return photoFailure(placeLocation);
         }
 
@@ -164,6 +180,9 @@ export async function GET(request: Request) {
         const contentType = imageResponse.headers.get("content-type") ?? "";
         if (!contentType.startsWith("image/")) return photoFailure(placeLocation);
 
+        googleBackoffMs = 0;
+        googleBackoffUntil = 0;
+
         const attributions = (photo.authorAttributions ?? [])
             .filter((item): item is { displayName: string; uri?: unknown } => typeof item.displayName === "string")
             .slice(0, 5)
@@ -182,7 +201,8 @@ export async function GET(request: Request) {
         }
 
         return new Response(imageResponse.body, { headers });
-    } catch {
+    } catch (error) {
+        noteGoogleFailure("place_photo", error);
         return noPhoto(404, placeLocation);
     }
 }
