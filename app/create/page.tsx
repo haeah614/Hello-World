@@ -20,9 +20,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         const { data: generation } = await supabase.from("generations").select("id,prompt,constraints").eq("id", generationId).eq("user_id", user.id).maybeSingle();
         if (generation) {
             const initialPlans = await supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,latitude,longitude,created_at").in("id", planIds);
-            const { data: savedPlans } = initialPlans.error
-                ? await supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,created_at").in("id", planIds)
-                : initialPlans;
+            const { data: savedPlans } = initialPlans;
             if (savedPlans?.length === planIds.length) {
                 const savedPlanIds = savedPlans.map((plan) => plan.id);
                 const [{ data: totals }, { data: votes }, { data: bookmarks, error: bookmarkError }] = await Promise.all([

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { coordinateRowsForPlaces, readPlaceCoordinates, validCoordinatePair } from "@/lib/coordinate-persistence";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,10 +32,6 @@ function databaseFailure(error: unknown) {
         status: typeof value.status === "number" ? value.status : "unknown",
         message: typeof value.message === "string" ? value.message.replace(/[\r\n\t]+/g, " ").slice(0, 160) : "unknown",
     };
-}
-function validCoordinatePair(latitude: unknown, longitude: unknown) {
-    return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
-        && typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
 }
 const plusCodePattern = /\b[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,}\b/i;
 
@@ -116,10 +113,7 @@ function parsePlaces(data: { places?: Array<Record<string, unknown>> }): Place[]
         const id = typeof place.id === "string" ? place.id : "";
         const displayName = place.displayName && typeof place.displayName === "object" ? (place.displayName as { text?: unknown }).text : "";
         if (!id || typeof displayName !== "string") return [];
-        const rawLocation = place.location && typeof place.location === "object" ? place.location as { latitude?: unknown; longitude?: unknown } : null;
-        const location = rawLocation && typeof rawLocation.latitude === "number" && Number.isFinite(rawLocation.latitude) && rawLocation.latitude >= -90 && rawLocation.latitude <= 90 && typeof rawLocation.longitude === "number" && Number.isFinite(rawLocation.longitude) && rawLocation.longitude >= -180 && rawLocation.longitude <= 180
-            ? { latitude: rawLocation.latitude, longitude: rawLocation.longitude }
-            : null;
+        const location = readPlaceCoordinates(place);
         const rawPhotos = Array.isArray(place.photos) ? place.photos : [];
         const usablePhotoNameCount = rawPhotos.filter((photo) => Boolean(
             photo && typeof photo === "object" && "name" in photo && typeof photo.name === "string" && photo.name.trim(),
@@ -279,10 +273,7 @@ export async function POST(request: Request) {
             const place = byId.get(suggestion.placeId)!;
             return { generation_id: generation.id, user_id: user.id, title: suggestion.title, description: suggestion.description, why_it_fits: suggestion.whyItFits, place_id: place.id, place_name: place.name, address: place.address, rating: place.rating, review_count: place.reviewCount, price_level: place.priceLevel, place_url: place.mapsUrl, place_types: place.types };
         });
-        const coordinateRows = rows.map((row) => {
-            const location = byId.get(row.place_id)?.location;
-            return { ...row, latitude: location?.latitude ?? null, longitude: location?.longitude ?? null };
-        });
+        const coordinateRows = coordinateRowsForPlaces(rows, new Map(places.map((place) => [place.id, place.location])));
         const planSelect = "id,title,description,why_it_fits,place_id,place_name,address,rating,review_count,price_level,place_url,latitude,longitude";
         const { data: savedPlans, error: planError } = await supabase.from("plans").insert(coordinateRows).select(planSelect);
         if (planError || !savedPlans) {

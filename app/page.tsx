@@ -4,6 +4,7 @@ import LoginButton from "./login-button";
 import { type PlanCardData } from "./sage/plan-card";
 import CategoryFeed from "./sage/category-feed";
 import ExploreNearColumbia from "./explore-near-columbia";
+import { isHiddenLegacyPublicPlan } from "@/lib/plan-visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -13,17 +14,16 @@ export default async function Home() {
         supabase.auth.getUser(),
         supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,place_types,latitude,longitude,created_at").order("created_at", { ascending: false }).limit(100),
     ]);
-    const { data: plans, error } = initialPlans.error
-        ? await supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,place_types,created_at").order("created_at", { ascending: false }).limit(100)
-        : initialPlans;
-    const planIds = (plans ?? []).map((plan) => plan.id);
+    const { data: plans, error } = initialPlans;
+    const publicPlans = (plans ?? []).filter((plan) => !isHiddenLegacyPublicPlan(plan.id));
+    const planIds = publicPlans.map((plan) => plan.id);
     const [{ data: totals }, { data: myVotes }, { data: saved, error: savedError }] = planIds.length ? await Promise.all([
         supabase.rpc("get_plan_vote_totals", { plan_ids: planIds }),
         user ? supabase.from("votes").select("plan_id,value").in("plan_id", planIds) : Promise.resolve({ data: [] }),
         user ? supabase.from("saved_places").select("plan_id").eq("user_id", user.id).in("plan_id", planIds) : Promise.resolve({ data: [], error: null }),
     ]) : [{ data: [] }, { data: [] }, { data: [], error: null }];
     const voteTotals = (totals ?? []) as { plan_id: string; positive_votes: number; negative_votes: number }[];
-    const cards: PlanCardData[] = (plans ?? []).map((plan) => ({
+    const cards: PlanCardData[] = publicPlans.map((plan) => ({
         ...plan,
         isSaved: savedError ? null : Boolean(saved?.some((row) => row.plan_id === plan.id)),
         upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.positive_votes ?? 0,
