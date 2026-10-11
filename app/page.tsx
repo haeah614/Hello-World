@@ -5,6 +5,7 @@ import { type PlanCardData } from "./sage/plan-card";
 import CategoryFeed from "./sage/category-feed";
 import ExploreNearColumbia from "./explore-near-columbia";
 import { isHiddenLegacyPublicPlan } from "@/lib/plan-visibility";
+import { dedupeCommunityPlans, type CommunityPlanMeta } from "@/lib/community-feed";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function Home() {
     const supabase = await createClient();
     const [{ data: { user } }, initialPlans] = await Promise.all([
         supabase.auth.getUser(),
-        supabase.from("plans").select("id,title,description,why_it_fits,place_name,address,rating,review_count,price_level,place_url,place_types,latitude,longitude,created_at").order("created_at", { ascending: false }).limit(100),
+        supabase.from("plans").select("id,title,description,why_it_fits,place_id,place_name,address,rating,review_count,price_level,place_url,place_types,latitude,longitude,created_at").order("created_at", { ascending: false }).limit(100),
     ]);
     const { data: plans, error } = initialPlans;
     const publicPlans = (plans ?? []).filter((plan) => !isHiddenLegacyPublicPlan(plan.id));
@@ -23,7 +24,14 @@ export default async function Home() {
         user ? supabase.from("saved_places").select("plan_id").eq("user_id", user.id).in("plan_id", planIds) : Promise.resolve({ data: [], error: null }),
     ]) : [{ data: [] }, { data: [] }, { data: [], error: null }];
     const voteTotals = (totals ?? []) as { plan_id: string; positive_votes: number; negative_votes: number }[];
-    const cards: PlanCardData[] = publicPlans.map((plan) => ({
+    const planMetadata = new Map<string, CommunityPlanMeta>(publicPlans.map((plan) => {
+        const total = voteTotals.find((row) => row.plan_id === plan.id);
+        return [plan.id, {
+            totalVotes: (total?.positive_votes ?? 0) + (total?.negative_votes ?? 0),
+        }];
+    }));
+    const visiblePlans = dedupeCommunityPlans(publicPlans, planMetadata);
+    const cards: PlanCardData[] = visiblePlans.map((plan) => ({
         ...plan,
         isSaved: savedError ? null : Boolean(saved?.some((row) => row.plan_id === plan.id)),
         upvoteCount: voteTotals.find((row) => row.plan_id === plan.id)?.positive_votes ?? 0,
